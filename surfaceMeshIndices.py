@@ -25,7 +25,7 @@ class surfaceMesh:
         refCentersList=None
     ) -> None:
         self.nodesList=np.asarray(nodesList)
-        self.facesList=np.asarray(facesList)
+        self.facesList=facesList
         self.name=name
         self.leftCorner=np.full(3,1e6,dtype="float")
         self.rightCorner=np.full(3,-1e6,dtype="float")

@@ -1,12 +1,9 @@
 from geometry import isIntersecting
 from loader import *
 
-from shapely.geometry import Point,Polygon
-
 def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
     nLines = len(upperMesh.nodesList)
     pathes= []
-    
     for i in range(nLines):
         path = []
         start_pt = upperMesh.nodesList[i]
@@ -17,17 +14,14 @@ def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
             cut_pt = start_pt+j*dL
             path.append(cut_pt)
         pathes.append(path) 
-    
     levels = [[None]*nLines for _ in range(nLayers+1)]
     for j in range(nLines):
         for i in range(nLayers+1):
             levels[i][j]=pathes[j][i]
-    
     points=[]
     for level in levels:
         for node in level:
             points.append(np.asarray(node))
-
     cells = []
     for face in upperMesh.facesList:
         for layer in range(nLayers):
@@ -42,9 +36,9 @@ def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
             for node in lower_face:
                 cell.append(node)
             cellPoints = [points[idx] for idx in cell]
-            cell=fixCellOrientation(cell, cellPoints)
+            if not isValidCell(cell, cellPoints):
+                cell = fixCellOrientation(cell)
             cells.append(cell)
-    
     boundaryFaces=[f for f in upperMesh.facesList]
     boundaryFacesRegions = [1 for i in range(len(upperMesh.facesList))]
     for face in upperMesh.facesList:
@@ -54,12 +48,10 @@ def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
             lower_face.append(node+lower_ij)
         boundaryFaces.append(lower_face)
         boundaryFacesRegions.append(2)
-    
     nNodes = int(len(pathes[0])*len(pathes))
     nCells = int(len(cells))
     nBoundaryFaces = int(len(boundaryFaces))
     nElements = nBoundaryFaces+nCells
-
     with open('build/levels/boundary_volume.msh', 'w') as data:
         fw = data.write
         fw("$MeshFormat\n2.2 0 8\n$EndMeshFormat\n")
@@ -99,7 +91,7 @@ def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
             counter+=1
         fw("$EndElements\n")
 
-def fixCellOrientation(nodesIndices,cellPoints):
+def isValidCell(nodesIndices,cellPoints):
     if(len(nodesIndices)==8):
         u=cellPoints[1]-cellPoints[0]
         u/=np.linalg.norm(u)
@@ -107,13 +99,11 @@ def fixCellOrientation(nodesIndices,cellPoints):
         v/=np.linalg.norm(v)
         xC=np.full(3,0,dtype='float')
         xF=np.full(3,0,dtype='float')
-        
         for pt in cellPoints:
             xC+=pt
 
         for counter in range(4):
             xF+=cellPoints[counter]
-
         xC/=8
         xF/=4
         w=xC-xF
@@ -121,9 +111,9 @@ def fixCellOrientation(nodesIndices,cellPoints):
         n=np.cross(u, v)
         check = np.dot(n, w)
         if(check<0):
-            return [nodesIndices[3],nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[7],nodesIndices[6],nodesIndices[5],nodesIndices[4]]
+            return False
         else:
-            return nodesIndices
+            return True
     elif(len(nodesIndices)==6):
         u=cellPoints[1]-cellPoints[0]
         u/=np.linalg.norm(u)
@@ -134,65 +124,92 @@ def fixCellOrientation(nodesIndices,cellPoints):
         n=np.cross(u, v)
         check = np.dot(n, w)
         if(check<0):
-            return [nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[5],nodesIndices[4],nodesIndices[3]]
+            return False
         else:
-            return nodesIndices
+            return True
 
-def fixSelfIntersections(refMesh, fixMesh):
-    edges = refMesh.edgesList
-    refPoints = refMesh.nodesList
+def fixCellOrientation(nodesIndices):
+    if(len(nodesIndices)==8):
+        return [nodesIndices[3],nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[7],nodesIndices[6],nodesIndices[5],nodesIndices[4]]
+    elif(len(nodesIndices)==6):
+        return [nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[5],nodesIndices[4],nodesIndices[3]]
+    
+def fixFlippedEdges(refMesh, fixMesh):
+    for _ in range(2):
+        edges = fixMesh.edgesList
+        fixPoints = fixMesh.nodesList
+        refPoints = refMesh.nodesList
+        for edge in edges:
+            u = refPoints[edge[0]]-refPoints[edge[1]]
+            v = fixPoints[edge[0]]-fixPoints[edge[1]]
+            if (np.dot(u,v)<0):
+                fixPoints[edge[0]],fixPoints[edge[1]]=fixPoints[edge[1]],fixPoints[edge[0]]
+        fixMesh.nodesList = fixPoints
+    return fixMesh
+
+def fixBadProjection(refMesh, fixMesh):
     fixPoints = fixMesh.nodesList
-    nFixedEdges = 0
-    for edge in edges:
-        n0=edge[0]
-        n1=edge[1]
-        a=copy.deepcopy(refPoints[n0])
-        b=copy.deepcopy(refPoints[n1])
-        c=copy.deepcopy(fixPoints[n0])
-        d=copy.deepcopy(fixPoints[n1])
-        line1=[a,c]
-        line2=[b,d]
-        if gm.isIntersecting(line1,line2):
-            print("self intersection")
-            nFixedEdges+=1
-            fixPoints[n0]=d
-            fixPoints[n1]=c
+    refPoints = refMesh.nodesList
+    faces = fixMesh.facesList
+    for face in faces:
+        if (len(face)==3):
+            n0, n1, n2 = face
+            faceEdges = [[n0,n1], [n1,n2], [n2,n0]]
+            corners = [n2,n0,n1]
+            for counter in range(3):
+                a=copy.deepcopy(refPoints[faceEdges[counter][0]])
+                b=copy.deepcopy(refPoints[faceEdges[counter][1]])
+                c=copy.deepcopy(fixPoints[faceEdges[counter][0]])
+                d=copy.deepcopy(fixPoints[faceEdges[counter][1]])
+                refC = refPoints[corners[counter]]
+                fixC = fixPoints[corners[counter]]
+                e=gm.projectPointOntoLine(refC, [a,b])
+                f=gm.projectPointOntoLine(fixC, [c,d])
+                if (gm.isOnLine([a,b], e) and gm.isOnLine([c,d], f)):
+                    v1=refC-e
+                    v1/=np.linalg.norm(v1)
+                    v2=fixC-f
+                    v2/=np.linalg.norm(v2)
+                    if np.dot(v1,v2) < 0 :
+                        direction = refC-e
+                        direction /= np.linalg.norm(direction)
+                        mag = np.linalg.norm(fixC-f)
+                        fixPoints[corners[counter]] = f+mag*direction
+    fixMesh.nodesList=fixPoints
+    return fixMesh
 
-
-    return fixMesh, nFixedEdges
-
+def repairMesh(refMesh, fixMesh, nIterations):
+    for _ in range(nIterations):
+        fixMesh = fixFlippedEdges(refMesh,fixMesh)
+        fixMesh = fixBadProjection(refMesh,fixMesh)
+    return fixMesh
 
 def main():
     start()
+        
     tools = vtkTools.vtkTools()
     nLayers = 5
-    nMaxSwappingIter = 1
+    nMaxRepairIter = 1
 
     cutMeshFile = "data/dtmb/ref_mesh.vtk"
     advectedMeshFile = "data/dtmb/advected_mesh.vtk"
+    
     cutMeshPolyData = (reader.reader(cutMeshFile)).polyData()
     advectedMeshPolyData = (reader.reader(advectedMeshFile)).polyData()
     cutVertices = tools.points(cutMeshPolyData)
     cutElements = tools.cells2(cutMeshPolyData)
     advectedVertices = tools.points(advectedMeshPolyData)
     advectedElements = tools.cells2(advectedMeshPolyData)
+    
     for i in range(len(advectedVertices)):
         if cutVertices[i][1] == 0 :
             advectedVertices[i][1]=0
     cutMesh = sM.surfaceMesh(cutVertices,cutElements)
     advectedMesh = sM.surfaceMesh(advectedVertices,advectedElements)
     
-    iter = 0
-    while(iter<nMaxSwappingIter):
-        advectedMesh, nFixedEdges = fixSelfIntersections(cutMesh, advectedMesh)
-        if nFixedEdges>0:
-            print("number of swapped edges is %i in the %i-th iteration"%(nFixedEdges,iter))
-        if nFixedEdges == 0:
-            break
-        iter+=1
+    advectedMesh = repairMesh(cutMesh, advectedMesh, nMaxRepairIter)
+    advectedMesh.writeVTK("fixed.vtu")
     
-    if iter> 0:
-        advectedMesh.writeVTK("swapped.vtu")
     makeVolMeshTwoSurfs(cutMesh, advectedMesh, nLayers)
 
 

@@ -179,7 +179,7 @@ class vtkTools():
             if(len(cell)>2):
                 cells.append(np.asarray(cell))
             i+=(nPts+1)
-        return np.asarray(cells)
+        return cells
 
     """ 
     Given array of edges
