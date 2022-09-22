@@ -7,6 +7,7 @@ import time
 import scipy
 import copy
 import vtk as vtk
+import json
 
 import vtkTools as vtkTools
 import surfaceMeshIndices as sM

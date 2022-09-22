@@ -186,30 +186,35 @@ def repairMesh(refMesh, fixMesh, nIterations):
 
 def main():
     start()
-        
+    f = open('parameters.json')
+    data = json.load(f)
+    f.close()
     tools = vtkTools.vtkTools()
-    nLayers = 5
-    nMaxRepairIter = 1
-
-    cutMeshFile = "data/dtmb/ref_mesh.vtk"
-    advectedMeshFile = "data/dtmb/advected_mesh.vtk"
-    
+    nLayers = int(data['nLayers'])
+    nMaxRepairIter = int(data['nMaxRepairIter'])
+    cutMeshFile = data['ref_mesh']
+    advectedMeshFile = data['advected_mesh']
     cutMeshPolyData = (reader.reader(cutMeshFile)).polyData()
     advectedMeshPolyData = (reader.reader(advectedMeshFile)).polyData()
     cutVertices = tools.points(cutMeshPolyData)
     cutElements = tools.cells2(cutMeshPolyData)
     advectedVertices = tools.points(advectedMeshPolyData)
     advectedElements = tools.cells2(advectedMeshPolyData)
-    
-    for i in range(len(advectedVertices)):
-        if cutVertices[i][1] == 0 :
-            advectedVertices[i][1]=0
+    if(data['sym']):
+        axis = -1
+        if data["symAxis"]=="x":
+            axis = 0
+        elif data["symAxis"]=="y":
+            axis = 1
+        else:
+            axis=2
+        for i in range(len(advectedVertices)):
+            if cutVertices[i][axis] == 0 :
+                advectedVertices[i][axis]=0
     cutMesh = sM.surfaceMesh(cutVertices,cutElements)
     advectedMesh = sM.surfaceMesh(advectedVertices,advectedElements)
-    
     advectedMesh = repairMesh(cutMesh, advectedMesh, nMaxRepairIter)
     advectedMesh.writeVTK("fixed.vtu")
-    
     makeVolMeshTwoSurfs(cutMesh, advectedMesh, nLayers)
 
 

@@ -1,0 +1,8 @@
+{
+    "ref_mesh":"data/dtmb/ref_mesh.vtk",
+    "advected_mesh":"data/dtmb/advected_mesh.vtk",
+    "nMaxRepairIter":1,
+    "nLayers":5,
+    "sym":true,
+    "symAxis":"y"
+}
