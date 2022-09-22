@@ -1,4 +1,3 @@
-from geometry import isIntersecting
 from loader import *
 
 def makeVolMeshTwoSurfs(upperMesh, lowerMesh, nLayers):
