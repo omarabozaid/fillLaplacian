@@ -181,10 +181,9 @@ def fixSmallTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:floa
             n0, n1, n2 = face
             refArea=sM.triangleArea(refPoints[n0], refPoints[n1], refPoints[n2])
             prjArea=sM.triangleArea(fixPoints[n0], fixPoints[n1], fixPoints[n2])            
-            minTaper=0.05
+            minTaper=0.1
             if(prjArea/refArea)<minTaper:
-                print(prjArea)
-                print("ref",refArea)
+                print("bad taper triangle")
                 refC=(1/3)*(refPoints[n0]+refPoints[n1]+refPoints[n2])
                 prjC=(1/3)*(fixPoints[n0]+fixPoints[n1]+fixPoints[n2])
                 dX=np.sqrt(refArea*minTaper)*relax
@@ -225,10 +224,10 @@ def fixFlippedTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:fl
 
 def repairMesh(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, nIterations:int, relax:float):
     for _ in range(nIterations):
-        #fixMesh = fixFlippedEdges(refMesh,fixMesh)
+        fixMesh = fixFlippedEdges(refMesh,fixMesh)
         fixMesh = fixSmallEdges(refMesh,fixMesh,relax)
         fixMesh = fixSmallTriangles(refMesh,fixMesh, relax)
-        #fixMesh = fixFlippedTriangles(refMesh,fixMesh, relax)
+        fixMesh = fixFlippedTriangles(refMesh,fixMesh, relax)
     return fixMesh
 
 def exportMSH(levels_nodes:list, boundaryFaces:list, cells:list, boundaryFacesRegions:list, exportFileName:str):
@@ -292,7 +291,7 @@ def main():
     nLayers = int(data['nLayers'])
     nLevels = nLayers+1
     nMaxRepairIter = int(data['nMaxRepairIter'])
-    relax = int(data['relax'])
+    relax = float(data['relax'])
     exportFileName=data['exportFileName']
     vtkFilesName=data['vtkFilesName']
     levelMeshes:list['sM.surfaceMesh'] = []
