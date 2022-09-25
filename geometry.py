@@ -16,7 +16,7 @@ def projectPointOntoLine(
     B:np.ndarray=line[1]
     AB:np.ndarray=B-A
     P:np.ndarray=point
-    d:np.ndarray = (AB) / np.linalg.norm(AB)
+    d:np.ndarray = (AB) / (np.linalg.norm(AB)+epsilon)
     v:np.ndarray = P - B
     t:float = np.dot(v,d)
     return B + t * d

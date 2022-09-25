@@ -1,4 +1,0 @@
-data/dtmb/ref_mesh.vtk
-data/dtmb/advected_mesh.vtk
-5
-1

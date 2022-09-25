@@ -2,7 +2,12 @@
     "ref_mesh":"data/dtmb/ref_mesh.vtk",
     "advected_mesh":"data/dtmb/advected_mesh.vtk",
     "nMaxRepairIter":1,
-    "nLayers":5,
+    "nLayers":1,
     "sym":true,
-    "symAxis":"y"
+    "symAxis":"y",
+    "relax":0.5,
+    "exportFileName":"mapped_boundary_volume",
+    "pathesFileName":"data/dtmb/stream.csv",
+    "dLaplacian":0.1,
+    "vtkFilesName":"data/dtmb/level_"
 }

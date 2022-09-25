@@ -452,118 +452,12 @@ class surfaceMesh:
             trianglesNodes.append(c)
         return surfaceMesh(nodesList=trianglesNodes, facesList=triangles)
 
-    def serialize(self,dx):
-        self.dx=dx
-        self.n=ptIJK(pt=self.rightCorner,left=self.leftCorner,dx=self.dx)
-        nObjects=(self.n[0]+1)*(self.n[1]+1)*(self.n[2]+1)
-        serialized=[None]*nObjects
-        j:int=0
-        for pt in self.nodesList:
-            ijk=ptIJK(pt=pt,left=self.leftCorner,dx=self.dx)
-            ptIndex=ijkToIndex(ijk=ijk,n=self.n)
-            if serialized[ptIndex]==None:
-                serialized[ptIndex]=[j]
-            else:
-                serialized[ptIndex].append(j)
-            j+=1
-        self.serialized=serialized
-        nObjects=(self.n[0]+1)*(self.n[1]+1)*(self.n[2]+1)
-        serialized=[None]*nObjects
-        j:int=0
-        for pt in self.centersList:
-            ijk=ptIJK(pt=pt,left=self.leftCorner,dx=self.dx)
-            ptIndex=ijkToIndex(ijk=ijk,n=self.n)
-            if serialized[ptIndex]==None:
-                serialized[ptIndex]=[j]
-            else:
-                serialized[ptIndex].append(j)
-            j+=1
-        self.serializedTriangles=serialized
-
     def meanEdgeLength(self):
         l=0.0
         for e in self.edgesList:
             l+=np.linalg.norm(self.nodesList[e[0]]-self.nodesList[e[1]])
         return (l/len(self.edgesList))
-
-    def isEnclosed(self,testPoint):
-        
-        checkRights:bool=[False]*3
-        checkLefts:bool=[False]*3
-
-        testIJK=ptIJK(
-                pt=testPoint,
-                left=self.leftCorner,
-                dx=self.dx
-            )
-        isInBox:bool=True
-        k:int=0
-        for idx in testIJK:
-            if idx>=self.n[k] or idx<0:
-                isInBox=False
-                break
-            k+=1
-
-        if isInBox:
-            for axis in range(3):
-                testIJK=ptIJK(
-                            pt=testPoint,
-                            left=self.leftCorner,
-                            dx=self.dx
-                        )
-                testIndex=ijkToIndex(ijk=testIJK,n=self.n)
-
-                if self.serialized[testIndex] != None:
-                    indices=self.serialized[testIndex]
-                    pt=[]
-                    for idx in indices:
-                        pt.append(self.nodesList[idx])
-                    nearestPt=gm.closestPoint(testPoint,pt)
-                    if nearestPt[axis]>=testPoint[axis]:
-                        checkRights[axis]=True
-                if checkRights[axis] == False:
-                    i=testIJK[axis]+1
-                    while i<self.n[axis]:
-                        testIJK[axis]=i
-                        testIndex=ijkToIndex(ijk=testIJK,n=self.n)
-                        if self.serialized[testIndex] != None:
-                            checkRights[axis]=True
-                            break
-                        i+=1
-            
-                testIJK=ptIJK(
-                            pt=testPoint,
-                            left=self.leftCorner,
-                            dx=self.dx
-                        )
-                testIndex=ijkToIndex(ijk=testIJK,n=self.n)
-
-                if self.serialized[testIndex] != None:
-                    indices=self.serialized[testIndex]
-                    pt=[]
-                    for idx in indices:
-                        pt.append(self.nodesList[idx])
-                    nearestPt=gm.closestPoint(testPoint,pt)
-                    if nearestPt[axis]<=testPoint[axis]:
-                        checkLefts[axis]=True
-                if checkLefts[axis] == False: 
-                    i=testIJK[axis]-1
-                    while i>=0:
-                        testIJK[axis]=i
-                        testIndex=ijkToIndex(ijk=testIJK,n=self.n)
-                        if self.serialized[testIndex] != None:
-                            checkLefts[axis]=True
-                            break
-                        i-=1
-        Probs=0
-        for check in checkRights:
-            if check == True:
-                Probs+=1
-        for check in checkLefts:
-            if check == True:
-                Probs+=1
-        return True if Probs>3 else False
-
+    
     def __isCollinear(self,twoEdgesIndices,tol=1e-5):
         e1=self.edgesList[twoEdgesIndices[0]]
         e2=self.edgesList[twoEdgesIndices[1]]
@@ -719,4 +613,4 @@ def triangleArea(p0,p1,p2):
     ab=p1-p0
     ac=p2-p0
     area=0.5*np.linalg.norm(np.cross(ab, ac))
-    return area
+    return area+1e-7
