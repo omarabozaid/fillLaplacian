@@ -1,13 +1,15 @@
 {
-    "ref_mesh":"data/dtmb/ref_mesh.vtk",
-    "advected_mesh":"data/dtmb/advected_mesh.vtk",
     "nMaxRepairIter":1,
-    "nLayers":1,
+    "nLayers":4,
     "sym":true,
     "symAxis":"y",
-    "relax":0.5,
+    "relax":0.25,
     "exportFileName":"mapped_boundary_volume",
-    "pathesFileName":"data/dtmb/stream.csv",
-    "dLaplacian":0.1,
-    "vtkFilesName":"data/dtmb/level_"
+    "vtkFilesName":"data/dtmb/level_",
+    "tracerFilesName":"data/dtmb/tracer",
+    "minAreaRatio":0.05,
+    "minEdgeRatio":0.2,
+    "minArea":1e-6,
+    "minEdge":1e-3,
+    "maxAngle":150
 }

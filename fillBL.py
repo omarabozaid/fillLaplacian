@@ -50,7 +50,7 @@ def makeVolMeshTwoSurfs(upperMesh:sM.surfaceMesh, lowerMesh:sM.surfaceMesh, nLay
         boundaryFacesRegions.append(2)
     exportMSH(levels_nodes= levels, boundaryFaces= boundaryFaces, boundaryFacesRegions= boundaryFacesRegions, cells= cells, exportFileName=exportFileName)
 
-def makeVolMeshPathes(levelMeshes:list['sM.surfaceMesh'], nLevels:int,exportFileName:str, nIterations:int, relax:float):
+def makeVolMeshPathes(levelMeshes:list['sM.surfaceMesh'], nLevels:int,exportFileName:str, nIterations:int, relax:float, minEdgeRatio:float, minAreaRatio:float, minEdge:float, minArea:float, maxAngle:float):
     levels = [levelMeshes[i].nodesList for i in range(len(levelMeshes))]
     nLevels = len(levels)
     nLayers = nLevels-1
@@ -63,7 +63,8 @@ def makeVolMeshPathes(levelMeshes:list['sM.surfaceMesh'], nLevels:int,exportFile
     levelID=0
     for level in levels:
         if levelID > 0:
-            levelMeshes[levelID]=repairMesh(refMesh=levelMeshes[levelID-1], fixMesh=levelMeshes[levelID], nIterations=nIterations, relax=relax)
+            levelMeshes[levelID].writeVTK("org%i.vtu"%levelID)
+            levelMeshes[levelID]=repairMesh(refMesh=levelMeshes[levelID-1], fixMesh=levelMeshes[levelID], nIterations=nIterations, relax=relax, minEdgeRatio=minEdgeRatio, minTaper=minAreaRatio, minEdge=minEdge, minArea=minArea, maxAngle=maxAngle)
             levelMeshes[levelID].writeVTK("fixed%i.vtu"%levelID)
         levelID+=1
     levels=[levelMeshes[i].nodesList for i in range(nLevels)]
@@ -82,13 +83,8 @@ def makeVolMeshPathes(levelMeshes:list['sM.surfaceMesh'], nLevels:int,exportFile
             for node in lower_face:
                 cell.append(node)
             cellPoints = [points[idx] for idx in cell]
-            #if not isValidCell(cellPoints):
-                #cell = fixCellOrientation(cell)
-            if len(cell)==6:
-                pyr=[cell[1], cell[4], cell[5], cell[2], cell[3]]
-                tet=[cell[0], cell[1], cell[2], cell[3]]
-                #cells.append(pyr)
-                #cells.append(tet)
+            if not isValidCell(cellPoints):
+                cell = fixCellOrientation(cell)
             cells.append(cell)
     boundaryFaces=[f for f in upperMesh.facesList]
     boundaryFacesRegions = [1 for i in range(len(upperMesh.facesList))]
@@ -99,15 +95,13 @@ def makeVolMeshPathes(levelMeshes:list['sM.surfaceMesh'], nLevels:int,exportFile
             lower_face.append(node+lower_ij)
         boundaryFaces.append(lower_face)
         boundaryFacesRegions.append(2)
-    exportMSH(levels_nodes= levels, boundaryFaces= [], boundaryFacesRegions= boundaryFacesRegions, cells= cells, exportFileName=exportFileName)
+    exportMSH(levels_nodes= levels, boundaryFaces= boundaryFaces, boundaryFacesRegions= boundaryFacesRegions, cells= cells, exportFileName=exportFileName)
 
 def isValidCell(cellPoints:np.ndarray):
     check = True
     if(len(cellPoints)==8):
-        u=np.asarray(cellPoints[1]-cellPoints[0])
-        u=u*(1/np.linalg.norm(u))
+        u=cellPoints[1]-cellPoints[0]
         v=cellPoints[2]-cellPoints[1]
-        v=v*(1/np.linalg.norm(v))
         xC=np.full(3,0,dtype='float')
         xF=np.full(3,0,dtype='float')
         for counter in range(8):
@@ -117,21 +111,19 @@ def isValidCell(cellPoints:np.ndarray):
         xC/=8
         xF/=4
         w=xC-xF
-        w=w*(1/np.linalg.norm(w))
         n=np.cross(u, v)
         nDotW = np.dot(n, w)
         if(nDotW<0):
+            print("invert hexahedron")
             check = False
     elif(len(cellPoints)==6):
         u=cellPoints[1]-cellPoints[0]
-        u=u*(1/np.linalg.norm(u))
         v=cellPoints[2]-cellPoints[0]
-        v=v*(1/np.linalg.norm(v))
         w=cellPoints[3]-cellPoints[0]
-        w=w*(1/np.linalg.norm(w))
         n=np.cross(u, v)
         nDotW = np.dot(n, w)
         if(nDotW<0):
+            print("invert prism")
             check = False
     return check
 
@@ -139,9 +131,9 @@ def fixCellOrientation(nodesIndices:np.ndarray):
     if(len(nodesIndices)==8):
         return [nodesIndices[3],nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[7],nodesIndices[6],nodesIndices[5],nodesIndices[4]]
     elif(len(nodesIndices)==6):
-        return [nodesIndices[2],nodesIndices[1],nodesIndices[0],nodesIndices[5],nodesIndices[4],nodesIndices[3]]
+        return [nodesIndices[0],nodesIndices[2],nodesIndices[1],nodesIndices[3],nodesIndices[5],nodesIndices[4]]
 
-def fixSmallEdges(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float):
+def fixSmallEdges(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float, minEdgeRatio:float, minEdge:float):
     edges = fixMesh.edgesList
     fixPoints = fixMesh.nodesList
     refPoints = refMesh.nodesList
@@ -150,12 +142,18 @@ def fixSmallEdges(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float):
         v = fixPoints[edge[0]]-fixPoints[edge[1]]
         lU = np.linalg.norm(u)
         lV = np.linalg.norm(v)
-        minEdgeRatio = 0.1
         if (lV/lU)<minEdgeRatio:
             print("bad taper edge")
             center=0.5*(fixPoints[edge[0]]+fixPoints[edge[1]])
             fixPoints[edge[0]] = center- u*minEdgeRatio*relax*0.5
             fixPoints[edge[1]] = center+ u*minEdgeRatio*relax*0.5
+        v = fixPoints[edge[0]]-fixPoints[edge[1]]
+        lV = np.linalg.norm(v)
+        if lV<minEdge:
+            print("small edge")
+            center=0.5*(fixPoints[edge[0]]+fixPoints[edge[1]])
+            fixPoints[edge[0]] = center- minEdge*relax*0.5
+            fixPoints[edge[1]] = center+ minEdge*relax*0.5
     fixMesh.nodesList = fixPoints
     return fixMesh
 
@@ -172,7 +170,7 @@ def fixFlippedEdges(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh):
         fixMesh.nodesList = fixPoints
     return fixMesh
 
-def fixSmallTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float):
+def fixSmallTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float, minTaper:float, minArea:float):
     fixPoints = fixMesh.nodesList
     refPoints = refMesh.nodesList
     faces = fixMesh.facesList
@@ -181,12 +179,20 @@ def fixSmallTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:floa
             n0, n1, n2 = face
             refArea=sM.triangleArea(refPoints[n0], refPoints[n1], refPoints[n2])
             prjArea=sM.triangleArea(fixPoints[n0], fixPoints[n1], fixPoints[n2])            
-            minTaper=0.1
             if(prjArea/refArea)<minTaper:
                 print("bad taper triangle")
                 refC=(1/3)*(refPoints[n0]+refPoints[n1]+refPoints[n2])
                 prjC=(1/3)*(fixPoints[n0]+fixPoints[n1]+fixPoints[n2])
                 dX=np.sqrt(refArea*minTaper)*relax
+                fixPoints[n0]=prjC+((refPoints[n0]-refC)/np.linalg.norm(refPoints[n0]-refC))*dX
+                fixPoints[n1]=prjC+((refPoints[n1]-refC)/np.linalg.norm(refPoints[n1]-refC))*dX
+                fixPoints[n2]=prjC+((refPoints[n2]-refC)/np.linalg.norm(refPoints[n2]-refC))*dX
+            prjArea=sM.triangleArea(fixPoints[n0], fixPoints[n1], fixPoints[n2])            
+            if prjArea<minArea:
+                print("small triangle")
+                refC=(1/3)*(refPoints[n0]+refPoints[n1]+refPoints[n2])
+                prjC=(1/3)*(fixPoints[n0]+fixPoints[n1]+fixPoints[n2])
+                dX=np.sqrt(minArea)*relax
                 fixPoints[n0]=prjC+((refPoints[n0]-refC)/np.linalg.norm(refPoints[n0]-refC))*dX
                 fixPoints[n1]=prjC+((refPoints[n1]-refC)/np.linalg.norm(refPoints[n1]-refC))*dX
                 fixPoints[n2]=prjC+((refPoints[n2]-refC)/np.linalg.norm(refPoints[n2]-refC))*dX
@@ -222,12 +228,53 @@ def fixFlippedTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:fl
     fixMesh.nodesList=fixPoints
     return fixMesh
 
-def repairMesh(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, nIterations:int, relax:float):
+def fixCoLinearTriangles(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, relax:float, maxAngle:float):
+    fixPoints = fixMesh.nodesList
+    faces = fixMesh.facesList
+    edges = fixMesh.edgesList
+    nodeNodes = fixMesh.nodesNodesList
+    for face in faces:
+        if (len(face)==3):
+            n0, n1, n2 = face
+            u=fixPoints[n0]-fixPoints[n1]
+            v=fixPoints[n1]-fixPoints[n2]
+            w=fixPoints[n2]-fixPoints[n0]
+            uMag=np.linalg.norm(u)
+            vMag=np.linalg.norm(v)
+            wMag=np.linalg.norm(w)
+            t=[]
+            t.append(np.rad2deg(np.arccos(np.dot(u,-w)/(uMag*wMag))))
+            t.append(np.rad2deg(np.arccos(np.dot(v,-u)/(vMag*uMag))))
+            t.append(np.rad2deg(np.arccos(np.dot(w,-v)/(wMag*vMag))))
+            for i in range(3):
+                if t[i]>maxAngle:
+                    nodeIdx = face[i]
+                    neighbouringNodes = nodeNodes[nodeIdx]
+                    nNeighbours = len(neighbouringNodes)
+                    pt=np.full(3, 0, dtype='float')
+                    for idx in neighbouringNodes:
+                        pt+=fixPoints[idx]
+                    pt/=nNeighbours
+                    base=np.full(3,0,dtype='float')
+                    for idx in face:
+                        if idx != nodeIdx:
+                            base+=fixPoints[idx]
+                    base/=2
+                    dX=np.linalg.norm(pt-base)
+                    direction=pt-base
+                    direction/=dX
+                    fixPoints[nodeIdx]=fixPoints[nodeIdx]+direction*dX*relax
+                    break
+    fixMesh.nodesList=fixPoints
+    return fixMesh
+
+def repairMesh(refMesh:sM.surfaceMesh, fixMesh:sM.surfaceMesh, nIterations:int, relax:float, minEdgeRatio:float, minTaper:float, minEdge:float, minArea:float, maxAngle:float):
     for _ in range(nIterations):
         fixMesh = fixFlippedEdges(refMesh,fixMesh)
-        fixMesh = fixSmallEdges(refMesh,fixMesh,relax)
-        fixMesh = fixSmallTriangles(refMesh,fixMesh, relax)
+        fixMesh = fixSmallEdges(refMesh,fixMesh,relax, minEdgeRatio, minEdge)
+        fixMesh = fixSmallTriangles(refMesh,fixMesh, relax, minTaper, minArea)
         fixMesh = fixFlippedTriangles(refMesh,fixMesh, relax)
+        fixMesh = fixCoLinearTriangles(refMesh, fixMesh, relax, maxAngle)
     return fixMesh
 
 def exportMSH(levels_nodes:list, boundaryFaces:list, cells:list, boundaryFacesRegions:list, exportFileName:str):
@@ -289,47 +336,32 @@ def main():
     f.close()
     tools = vtkTools.vtkTools()
     nLayers = int(data['nLayers'])
-    nLevels = nLayers+1
     nMaxRepairIter = int(data['nMaxRepairIter'])
     relax = float(data['relax'])
     exportFileName=data['exportFileName']
     vtkFilesName=data['vtkFilesName']
+    tracerFilesName=data['tracerFilesName']
+    minAreaRatio=data['minAreaRatio']
+    minEdgeRatio=data['minEdgeRatio']
+    minArea=data['minArea']
+    minEdge=data['minEdge']
+    maxAngle=data['maxAngle']
     levelMeshes:list['sM.surfaceMesh'] = []
+    nLevels = nLayers+1
     for i in range(nLevels):   
-        fileName = vtkFilesName+str(i)+".vtk" 
-        polyData = (reader.reader(fileName)).polyData()
-        vertices = tools.points(polyData)
-        elements = tools.cells2(polyData)
-        levelMeshes.append(sM.surfaceMesh(vertices,elements))
-    makeVolMeshPathes(levelMeshes=levelMeshes, nLevels=nLevels, exportFileName=exportFileName,nIterations=nMaxRepairIter, relax=relax)
-    
-    """
-    advectedMeshFile = data['advected_mesh']
-    cutMeshPolyData = (reader.reader(cutMeshFile)).polyData()
-    advectedMeshPolyData = (reader.reader(advectedMeshFile)).polyData()
-    cutVertices = tools.points(cutMeshPolyData)
-    cutElements = tools.cells2(cutMeshPolyData)
-    advectedVertices = tools.points(advectedMeshPolyData)
-    advectedElements = tools.cells2(advectedMeshPolyData)
-    if(data['sym']):
-        print("sym case")
-        axis = -1
-        if data["symAxis"]=="x":
-            axis = 0
-        elif data["symAxis"]=="y":
-            axis = 1
+        if i==0:
+            fileName = vtkFilesName+str(i)+".vtk" 
+            polyData = (reader.reader(fileName)).polyData()
+            vertices = tools.points(polyData)
+            elements = tools.cells2(polyData)
+            levelMeshes.append(sM.surfaceMesh(vertices,elements))
         else:
-            axis=2
-        for i in range(len(advectedVertices)):
-            if abs(cutVertices[i][axis]) < 1e-4 :
-                advectedVertices[i][axis]=0
-    cutMesh = sM.surfaceMesh(cutVertices,cutElements)
-    advectedMesh = sM.surfaceMesh(advectedVertices,advectedElements)
-    advectedMesh = repairMesh(cutMesh, advectedMesh, nMaxRepairIter, relax)
-    advectedMesh.writeVTK("fixed.vtu")
-    makeVolMeshTwoSurfs(cutMesh, advectedMesh, nLayers,exportFileName)
-    """
-    
+            fileName = tracerFilesName+str(i)+".vtk" 
+            polyData = (reader.reader(fileName)).polyData()
+            vertices = tools.points(polyData)
+            elements = levelMeshes[0].facesList
+            levelMeshes.append(sM.surfaceMesh(vertices,elements,False,"dummy",levelMeshes[0].topologyInformation()))
+    makeVolMeshPathes(levelMeshes=levelMeshes, nLevels=nLevels, exportFileName=exportFileName,nIterations=nMaxRepairIter, relax=relax, minEdgeRatio=minEdgeRatio, minAreaRatio=minAreaRatio, minEdge=minEdge, minArea=minArea, maxAngle=maxAngle)  
 
 if __name__ == '__main__':
     main()

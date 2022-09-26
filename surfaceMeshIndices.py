@@ -13,16 +13,7 @@ class surfaceMesh:
         facesList,
         buildTopology:bool=True,
         name:str="patch",
-        refNodesEdgesList=None,
-        refNodesEdgesIndices=None,
-        refNodesNodesList=None,
-        refEdgesList=None,
-        refEdgesFaces=None,
-        refIsBoundaryEdge=None,
-        refIsBoundaryNode=None,
-        refFacesEdgesIndices=None,
-        refElementTypes=None,
-        refCentersList=None
+        connectivityLists=[None]
     ) -> None:
         self.nodesList=np.asarray(nodesList)
         self.facesList=facesList
@@ -39,40 +30,34 @@ class surfaceMesh:
             self.rightCorner[2]=max(self.rightCorner[2],pt[2])
             self.centerOfMass+=pt
         self.centerOfMass/=len(self.nodesList)
-        self.__inflateBB(1.1)
         if buildTopology:
             self.__buildTopology()  
         else:
-            self.nodesEdgesList = refNodesEdgesList
-            self.nodesEdgesIndices = refNodesEdgesIndices
-            self.nodesNodesList = refNodesNodesList
-            self.edgesList = refEdgesList
-            self.edgesFaces = refEdgesFaces
-            self.isBoundaryEdge = refIsBoundaryEdge
-            self.isBoundaryNode = refIsBoundaryNode
-            self.facesEdgesIndices = refFacesEdgesIndices
-            self.elementTypes = refElementTypes
-            self.centersList = refCentersList
+            self.nodesEdgesIndices = connectivityLists[0]
+            self.nodesNodesList = connectivityLists[1]
+            self.edgesList = connectivityLists[2]
+            self.edgesFaces = connectivityLists[3]
+            self.isBoundaryEdge = connectivityLists[4]
+            self.isBoundaryNode = connectivityLists[5]
+            self.facesEdgesIndices = connectivityLists[6]
+            self.elementTypes = connectivityLists[7]
+            self.centersList = connectivityLists[8]
     
     def topologyInformation(self):
         return (
-                self.nodesEdgesList, 
-                self.nodesEdgesIndices, 
-                self.nodesNodesList, 
-                self.edgesList ,
-                self.edgesFaces ,
-                self.isBoundaryEdge,
-                self.isBoundaryNode,
-                self.facesEdgesIndices,
-                self.elementTypes,
-                self.centersList
+                [
+                    self.nodesEdgesIndices, 
+                    self.nodesNodesList, 
+                    self.edgesList ,
+                    self.edgesFaces ,
+                    self.isBoundaryEdge,
+                    self.isBoundaryNode,
+                    self.facesEdgesIndices,
+                    self.elementTypes,
+                    self.centersList
+                ]
         )
         
-    def __inflateBB(self,lamda:float=1.1):
-        center=0.5*(self.leftCorner+self.rightCorner)
-        self.leftCorner=center-lamda*(center-self.leftCorner)
-        self.rightCorner=center+lamda*(self.rightCorner-center)
-
     def __buildTopology(self)->None:
 
         nodesEdgesList=[None]*len(self.nodesList)
@@ -85,7 +70,6 @@ class surfaceMesh:
         facesEdgesIndices=[None]*len(self.facesList)
         elementTypes=[None]*len(self.facesList)
         centersList=[None]*len(self.facesList)
-
         for i in range(len(self.facesList)):
             if len(self.facesList[i])==3:
                 elementTypes[i]="triangle"
@@ -189,199 +173,6 @@ class surfaceMesh:
         self.elementTypes=elementTypes
         self.centersList=centersList
 
-    def smoothMesh(self,
-    surfaceMeshSmoothingDict:dict,
-    isFree
-    )->None:
-        iter:int=0
-        smoother=surfaceMeshSmoothingDict.get('smoother')
-        maxSmoothingIter=surfaceMeshSmoothingDict.get('maxSmoothingIter')
-        smoothBoundaries=surfaceMeshSmoothingDict.get('smoothBoundaries')
-
-        if smoother == "power":
-            rf=surfaceMeshSmoothingDict.get('rf')
-            exponent=surfaceMeshSmoothingDict.get('exponent')
-            while(iter<maxSmoothingIter):
-                #print("SMOOTHING ITER ",iter)
-                self.__powerSmoothMesh(
-                    rf=rf,exponent=exponent,smoothBoundaries=smoothBoundaries,
-                    isFree=isFree
-                )
-                iter+=1
-        elif smoother == "weighted":
-            rf=surfaceMeshSmoothingDict.get('rf')
-            exponent=surfaceMeshSmoothingDict.get('exponent')
-            while(iter<maxSmoothingIter):
-                #print("SMOOTHING ITER ",iter)
-                self.__weightedLaplacian(
-                        rf=rf,
-                        isFree=isFree
-                )
-                iter+=1
-        
-        elif smoother == "laplacian":
-            rf=surfaceMeshSmoothingDict.get('rf')
-            while(iter<maxSmoothingIter):
-                #print("SMOOTHING ITER ",iter)
-                self.__laplacian(rf=rf,isFree=isFree)
-                iter+=1
-        
-        elif smoother == "HC":
-            alpha=surfaceMeshSmoothingDict.get('alpha')
-            beta=surfaceMeshSmoothingDict.get('beta')
-            origPts=copy.deepcopy(self.nodesList)
-            while(iter<maxSmoothingIter):
-                #print("SMOOTHING ITER ",iter)
-                self.__HCSmoothMesh(o=origPts,alpha=alpha,beta=beta,isFree=isFree)
-                gc.collect()
-                iter+=1
-            gc.collect()
-
-    def __laplacian(self,rf:float=0.25,isFree=[None]):
-        nPts=len(self.nodesList)
-        p=[None]*nPts
-        i:int=0
-        for stencil in self.nodesNodesList:
-            p[i]=np.full(shape=3, fill_value=0.0, dtype="float")
-            w=1/len(stencil)
-            for neighbor in stencil:
-                p[i]+=w*(np.asarray(self.nodesList[neighbor]))
-            i+=1
-        for i in range(nPts):
-            self.nodesList[i]=np.asarray(rf*p[i]+(1-rf)*np.asarray(self.nodesList[i]))
-            if isFree[i]==False:
-                self.nodesList[i][1]=0.0
-
-    def __powerSmoothMesh(self,rf:float=0.25,exponent:"float"=1,smoothBoundaries:bool=True,isFree=[None])->None:
-        newNodesList=[None]*len(self.nodesList)
-        i:int=0
-        for stencil in self.nodesNodesList:
-            den=0
-            newPos=np.full(3,0.0,dtype="float")
-            vertex=self.nodesList[i]
-            for neighbor in stencil:
-                d=np.power(np.linalg.norm(vertex-self.nodesList[neighbor]),exponent)
-                den+=d
-                newPos+=d*self.nodesList[neighbor]
-            if den>1e-5:
-                newPos/=den
-            else:
-                newPos=vertex
-            if smoothBoundaries:
-                if isFree[i]:
-                    newNodesList[i]=newPos*rf+vertex*(1-rf)
-            else:
-                if self.isBoundaryNode[i]:
-                    newNodesList[i]=vertex
-                elif isFree[i]:
-                    newNodesList[i]=newPos*rf+vertex*(1-rf)
-            i+=1
-        self.nodesList=newNodesList
-
-    def __HCSmoothMesh(self,o,alpha,beta,isFree=[None]):
-        nPts=len(self.nodesList)
-
-        p=[None]*nPts
-
-        alpha=alpha
-        beta =beta
-
-        b=[None]*nPts
-        d=[None]*nPts
-        
-        i:int=0
-        for stencil in self.nodesNodesList:
-            p[i]=0.0*self.nodesList[i]
-            w=1/len(stencil)
-            for neighbor in stencil:
-                p[i]+=w*(self.nodesList[neighbor])
-            b[i]=p[i]-(alpha*o[i]+(1-alpha)*self.nodesList[i])
-            i+=1
-
-        i:int=0
-        for stencil in self.nodesNodesList:
-            d[i]=beta*b[i]
-            for neighbor in stencil:
-                d[i]+=(((1-beta)/len(stencil))*b[neighbor])
-            d[i]*=-1
-            if isFree[i]:
-                self.nodesList[i]=p[i]+d[i]
-            i+=1
-    
-    def repairSelfIntersectingFaces(self,maxIter:int=50)->None:
-        iter:int=0
-        while iter<=maxIter:
-            selfIntersectingFacesList=self.__selfIntersectingFaces()
-            if len(selfIntersectingFacesList)==0:
-                break
-            else:
-                for faceIndex in selfIntersectingFacesList:
-                    self.__fixSelfIntersectingFace(faceIndex=faceIndex)
-                self.__buildTopology()
-            iter+=1
-
-    def naiveRepairSelfIntersectingFaces(self,
-        surfaceMeshControlsDict:dict,
-        ctrs
-    )->None:
-        iter:int=0
-        while iter<surfaceMeshControlsDict.get("maxIterFaceCorrection"):
-            print("SELF-INTERSECTION ITERATION ",iter)
-            for faceIndex in range(len(self.facesList)):
-                self.__fixSelfIntersectingFace(faceIndex=faceIndex,refCtr=ctrs[faceIndex])
-            self.__buildTopology()
-            iter+=1
-
-    def __fixSelfIntersectingFace(self,faceIndex,refCtr)->None:
-        wrongFace=self.facesList[faceIndex]
-        pts=[]
-        for i in range(len(wrongFace)):
-            pts.append(self.nodesList[wrongFace[i]])
-        correctedFace=gm.reOrderPoints(
-            ptsIndices=wrongFace,
-            points=pts,
-            refCtr=refCtr
-        )
-        self.facesList[faceIndex]=correctedFace
-
-    def __selfIntersectingFaces(self)->None:
-        facesList=self.facesList
-        nFaces=len(facesList)
-        selfIntersectingFaces=[]
-        for i in range(nFaces):
-            if self.__isSelfIntersecting(faceIndex=i):
-                selfIntersectingFaces.append(i)
-        return selfIntersectingFaces
-    
-    def __isSelfIntersecting(self,faceIndex)->bool:
-        edgesIndices=self.facesEdgesIndices[faceIndex]
-        edges=[]
-        for edgeIndex in edgesIndices:
-            edges.append(self.edgesList[edgeIndex])
-        for i in range(len(edges)):
-            node1Index=edges[i][0]
-            node2Index=edges[i][1]
-            line1=[
-                self.nodesList[node1Index],self.nodesList[node2Index]
-                ]
-            edge1=edges[i]
-            for j in range(len(edges)):
-                edge2=edges[j]
-                if not self.__isAdjacent(e1=edge1,e2=edge2):
-                    node3Index=edges[j][0]
-                    node4Index=edges[j][1]
-                    line2=[
-                        self.nodesList[node3Index],self.nodesList[node4Index]
-                        ]
-                    if(
-                        gm.isIntersecting(
-                        line1=line1,
-                        line2=line2
-                            )
-                        ):
-                        return True
-        return False
-
     def __isAdjacent(self,firstEdgeIndex:int,secondEdgeIndex:int)->bool:
         e1=self.edgesList[firstEdgeIndex]
         e2=self.edgesList[firstEdgeIndex]
@@ -427,7 +218,6 @@ class surfaceMesh:
                 )->None:
 
         block = self.surfaceMeshToVTK(arrays,arrays_names,is_nodal)
-
         writer=vtk.vtkXMLDataSetWriter()
         writer.SetFileName("build/levels/"+name)
         writer.SetInputData(block)
